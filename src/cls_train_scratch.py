@@ -39,7 +39,7 @@ tokenizer = AutoTokenizer.from_pretrained(model_name)
 config = AutoConfig.from_pretrained(model_name)
 config.num_labels = num_labels
 config.attn_implementation = "flash_attention_2"
-config.pad_token_id = 151643  # 确保与分词器一致
+config.pad_token_id = tokenizer.pad_token_id or tokenizer.eos_token_id  # 确保与分词器一致
 
 # 从配置创建模型（随机初始化权重）
 model = AutoModelForSequenceClassification.from_config(config)
@@ -74,15 +74,24 @@ dataset = dataset.train_test_split(test_size=0.05, seed=42)  # 5%作为验证集
 # 定义一个函数来处理数据集中的文本
 def preprocess_function(examples):
     # 仅返回字典格式的分词结果，不转换为张量
-    return tokenizer(
+    tokenized = tokenizer(
         examples['text'], 
         truncation=True, 
         padding=False,  # 重要：不要在此处填充
         max_length=2048  # 建议设置最大长度
     )
+    # 添加标签到输出
+    tokenized['labels'] = examples['label']
+    return tokenized
 
 # 对数据集进行预处理
-encoded_dataset = dataset.map(preprocess_function, batched=True)
+# 获取原始列名以便移除
+original_columns = dataset["train"].column_names
+encoded_dataset = dataset.map(
+    preprocess_function, 
+    batched=True,
+    remove_columns=original_columns  # 关键：移除原始列，只保留处理后的特征
+)
 
 data_collator = DataCollatorWithPadding(
     tokenizer=tokenizer,
