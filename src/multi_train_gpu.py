@@ -15,21 +15,37 @@ class MultiTaskQwenModel(torch.nn.Module):
         self.model = base_model
         config = base_model.config
         
-        # 创建三个独立的分类头
-        self.clarity_head = torch.nn.Linear(config.hidden_size, 10)  # 10个类别
-        self.complexity_head = torch.nn.Linear(config.hidden_size, 10)
-        self.quality_head = torch.nn.Linear(config.hidden_size, 10)
+        # 创建三个独立的分类头，并指定与基础模型相同的数据类型
+        self.clarity_head = torch.nn.Linear(config.hidden_size, 10).to(dtype=base_model.dtype)  # 10个类别
+        self.complexity_head = torch.nn.Linear(config.hidden_size, 10).to(dtype=base_model.dtype)
+        self.quality_head = torch.nn.Linear(config.hidden_size, 10).to(dtype=base_model.dtype)
+        
+        # 添加梯度检查点支持
+        self.gradient_checkpointing = False
         
     def forward(self, input_ids, attention_mask, labels=None, **kwargs):
-        outputs = self.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            output_hidden_states=True
-        )
+        # 添加梯度检查点支持
+        if self.gradient_checkpointing and self.training:
+            outputs = torch.utils.checkpoint.checkpoint(
+                self.model,
+                input_ids,
+                attention_mask,
+                output_hidden_states=True,
+                use_reentrant=False
+            )
+        else:
+            outputs = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                output_hidden_states=True
+            )
         
         # 获取[CLS]位置的隐藏状态
         last_hidden_state = outputs.hidden_states[-1]
         pooled_output = last_hidden_state[:, 0]  # 使用第一个token作为分类表示
+        
+        # 确保分类头使用正确的数据类型
+        pooled_output = pooled_output.to(dtype=self.clarity_head.weight.dtype)
         
         # 通过三个分类头
         clarity_logits = self.clarity_head(pooled_output)
@@ -38,6 +54,9 @@ class MultiTaskQwenModel(torch.nn.Module):
         
         loss = None
         if labels is not None:
+            # 确保标签使用正确的数据类型（通常是long）
+            labels = labels.to(dtype=torch.long)
+            
             # 拆分三个任务的标签
             clarity_labels = labels[:, 0]
             complexity_labels = labels[:, 1]
@@ -58,6 +77,7 @@ class MultiTaskQwenModel(torch.nn.Module):
             "complexity_logits": complexity_logits,
             "quality_logits": quality_logits
         }
+    
     # 添加梯度检查点启用方法
     def gradient_checkpointing_enable(self, **kwargs):
         self.gradient_checkpointing = True
@@ -67,7 +87,6 @@ class MultiTaskQwenModel(torch.nn.Module):
     def gradient_checkpointing_disable(self):
         self.gradient_checkpointing = False
         self.model.gradient_checkpointing_disable()
-
 
 # 2. 训练参数设置
 model_name = "/home/kas/kas_workspace/model/Reward/Qwen3-4B/"
