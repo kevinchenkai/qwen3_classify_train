@@ -1,84 +1,137 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-import torch
-import json
-from tqdm import tqdm
+from transformers import Trainer, TrainingArguments
+import json, random, torch
+from datasets import Dataset
+from transformers import DataCollatorWithPadding
 
-# 配置参数
-TEST_FILE = "/home/kas/kas_workspace/share/chenkai/playground/dataset/cls_prompt/cls_test.jsonl"
-MODEL_PATH = "/home/kas/kas_workspace/share/chenkai/playground/output/cls_prompt/qwen3_cls_3epoch"
-BATCH_SIZE = 4  # 根据GPU显存调整批次大小
+# 1.训练参数设置
+model_name = "/home/kas/kas_workspace/model/Reward/Qwen3-4B/"  # 模型名或者本地路径
+file_path = "/home/kas/kas_workspace/share/chenkai/playground/dataset/cls_prompt/cls_train.jsonl"  # 定义训练集路径
+save_path = "/home/kas/kas_workspace/share/chenkai/playground/output/cls_prompt/qwen3_cls_3epoch-0628"  # 定义保存路径
+logging_dir = save_path + "/tensorboard/"  # 日志目录
 
-# 标签映射定义
-LABEL_MAP = {
+num_train_epochs=3
+per_device_train_batch_size=16  # 提高批处理大小（根据GPU内存调整）
+gradient_accumulation=2  # 梯度累积步数（根据GPU内存调整）
+per_device_eval_batch_size=8  # 提高评估批处理大小
+warmup_steps=25
+weight_decay=0.01
+logging_steps=1              # 减少日志频率
+lr=1e-5  # 学习率
+lr_scheduler_type="cosine"
+
+# 2.创建标签到索引的映射
+label_to_id = {
     "世界知识问答": 0, "开放域问答": 1, "常识推理": 2, "逻辑推理": 3,
     "COT推理": 4, "代码": 5, "数学": 6, "角色扮演": 7, "翻译": 8,
     "阅读理解": 9, "信息抽取": 10, "文本改写": 11, "文本摘要": 12,
-    "文本纠错": 13, "文本分类": 14, "意图识别": 15, "文本写作": 16, 
-    "创意设计": 17, "其他类别": 18
+    "文本纠错": 13, "文本分类": 14, "意图识别": 15, "文本写作": 16, "创意设计": 17, "其他类别":18
 }
-ID_TO_LABEL = {v: k for k, v in LABEL_MAP.items()}  # 创建反向映射
+num_labels = len(label_to_id)
 
-def load_test_data(file_path):
-    """从jsonl文件加载测试数据"""
+#  加载预训练的 Qwen3 模型和分词器
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForSequenceClassification.from_pretrained(
+    model_name, 
+    num_labels=num_labels,
+    attn_implementation="flash_attention_2",
+    torch_dtype=torch.bfloat16   # 使用bfloat16精度
+)
+model.config.pad_token_id = 151643  # 定义pad token，模型才会忽略后面那些pad而是把真正最后一个token的hidden state用于分类
+
+# 3.读取训练jsonl文件
+def read_jsonl(file_path):
     data = []
     with open(file_path, 'r', encoding='utf-8') as f:
         for line in f:
-            item = json.loads(line)
-            # 处理可能的多行文本数据
-            if isinstance(item['text'], list):
-                item['text'] = '\n'.join(item['text'])
-            data.append((item['text'], item['label']))
+            data.append(json.loads(line))
     return data
+data = read_jsonl(file_path)
+random.shuffle(data)
 
-def main():
-    # 加载模型
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
-    model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device).eval()
-    
-    # 加载测试数据
-    test_data = load_test_data(TEST_FILE)
-    texts, true_labels = zip(*test_data)
-    
-    print(f"Loaded {len(texts)} test samples from {TEST_FILE}")
-    
-    # 分批处理预测
-    predictions, batch_texts = [], []
-    for i in tqdm(range(0, len(texts), BATCH_SIZE), desc="预测进度"):
-        batch = texts[i:i+BATCH_SIZE]
-        inputs = tokenizer(
-            batch, 
-            padding=True, 
-            truncation=True, 
-            max_length=512,
-            return_tensors="pt"
-        ).to(device)
-        
-        with torch.no_grad():
-            outputs = model(**inputs)
-        
-        batch_preds = torch.argmax(outputs.logits, dim=-1).cpu().tolist()
-        predictions.extend([ID_TO_LABEL[p] for p in batch_preds])
-        batch_texts.extend(batch)
-    
-    # 计算并显示准确率
-    correct_count = sum(1 for pred, true in zip(predictions, true_labels) if pred == true)
-    accuracy = correct_count / len(true_labels)
+# 将文本标签转换为数值标签
+for example in data:
+    example['label'] = label_to_id[example['label']]
 
-    # 打印详细结果（可选）
-    for i, (text, true_label) in enumerate(zip(batch_texts, true_labels)):
-        pred_label = predictions[i]
-        status = "✓" if pred_label == true_label else "✗"
-        print(f"[{status}] 样本 {i+1}:\n  文本: {text[:50]}...\n  真实: {true_label}\n  预测: {pred_label}\n")
+# 检查标签范围
+for example in data:
+    assert 0 <= example['label'] < len(label_to_id), f"Label out of range: {example['label']}"    
 
-    print("\n" + "="*50)
-    print(f"测试结果 (样本数: {len(true_labels)})")
-    print(f"正确预测: {correct_count}")
-    print(f"准确率: {accuracy:.4f} ({accuracy*100:.2f}%)")
-    print("="*50 + "\n")
+# 将数据转换为datasets库的Dataset对象
+dataset = Dataset.from_list(data)
 
-if __name__ == "__main__":
-    main()
+# 将数据集拆分为训练集和验证集
+dataset = dataset.train_test_split(test_size=0.05, seed=42)  # 5%作为验证集
+
+# 定义一个函数来处理数据集中的文本
+def preprocess_function(examples):
+    # 仅返回字典格式的分词结果，不转换为张量
+    return tokenizer(
+        examples['text'], 
+        truncation=True, 
+        padding=False,  # 重要：不要在此处填充
+        max_length=2048  # 建议设置最大长度
+    )
+
+# 对数据集进行预处理
+encoded_dataset = dataset.map(preprocess_function, batched=True)
+
+data_collator = DataCollatorWithPadding(
+    tokenizer=tokenizer,
+    padding=True
+)
+
+# 定义训练参数
+training_args = TrainingArguments(
+    output_dir=save_path,                           # 输出目录
+    num_train_epochs=num_train_epochs,              # 训练的epoch数
+    per_device_train_batch_size=per_device_train_batch_size,    # 每个设备的训练batch size
+    per_device_eval_batch_size=per_device_eval_batch_size,      # 每个设备的评估batch size
+    warmup_steps=warmup_steps,                  # 预热步数
+    weight_decay=weight_decay,                  # 权重衰减
+    logging_dir=logging_dir,                      # 日志目录
+    logging_steps=logging_steps,
+    report_to="tensorboard",                    # 使用TensorBoard记录日志
+    #eval_strategy="epoch",                # 每个epoch评估一次
+    save_strategy="steps",                      # 每个epoch保存一次检查点
+    save_steps=2000,                              # 每100步保存一次检查点
+    save_total_limit=3,                         # 最多保存3个检查点，旧的会被删除
+    fp16=False,                                 # 禁用FP16（使用BF16）
+    bf16=True,                                  # 启用BF16（针对H100优化）
+    gradient_accumulation_steps=gradient_accumulation,   # 梯度累积（可选，根据显存调整）
+    learning_rate=lr,                          # 设置学习率（根据模型调整）
+    lr_scheduler_type=lr_scheduler_type,       # 使用余弦学习率调度器
+    optim="adamw_torch",                        # 使用Torch实现的AdamW
+    load_best_model_at_end=False,                # 训练结束后加载最佳模型
+    metric_for_best_model="eval_loss",          # 根据验证损失选择最佳模型
+    greater_is_better=False,                    # 损失越小越好
+    gradient_checkpointing=True,  # 启用梯度检查点
+)
+
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=encoded_dataset['train'],
+    eval_dataset=encoded_dataset['test'],
+    data_collator=data_collator,  # 关键：添加数据整理器
+)
+
+# 开始训练
+trainer.train()
+print(f"训练完成，正在保存模型....")
+
+# 训练结束后保存最终模型和最佳模型
+trainer.save_state()
+trainer.save_model(output_dir=save_path)
+tokenizer.save_pretrained(save_path)
+print(f"模型已保存到 {save_path}")
+
+"""
+# 评估最佳模型并保存评估结果
+eval_results = trainer.evaluate()
+print(f"最终评估结果: {eval_results}")
+with open(f"{save_path}/eval_results.json", "w") as f:
+    json.dump(eval_results, f, indent=4)
+"""
