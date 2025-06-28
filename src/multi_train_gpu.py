@@ -16,9 +16,9 @@ class MultiTaskQwenModel(torch.nn.Module):
         config = base_model.config
         
         # 创建三个独立的分类头，并指定与基础模型相同的数据类型
-        self.clarity_head = torch.nn.Linear(config.hidden_size, 10).to(dtype=base_model.dtype)  # 10个类别
-        self.complexity_head = torch.nn.Linear(config.hidden_size, 10).to(dtype=base_model.dtype)
-        self.quality_head = torch.nn.Linear(config.hidden_size, 10).to(dtype=base_model.dtype)
+        self.clarity_head = torch.nn.Linear(config.hidden_size, 5).to(dtype=base_model.dtype)  # 5个类别
+        self.complexity_head = torch.nn.Linear(config.hidden_size, 5).to(dtype=base_model.dtype)
+        self.quality_head = torch.nn.Linear(config.hidden_size, 5).to(dtype=base_model.dtype)
         
         # 添加梯度检查点支持
         self.gradient_checkpointing = False
@@ -101,7 +101,7 @@ per_device_eval_batch_size = 8
 warmup_steps = 25
 weight_decay = 0.01
 logging_steps = 1
-lr = 1e-5
+lr = 2e-5
 lr_scheduler_type = "cosine"
 
 # 3. 加载模型和分词器
@@ -239,8 +239,8 @@ training_args = TrainingArguments(
     weight_decay=weight_decay,
     logging_dir=logging_dir,
     logging_steps=logging_steps,
-    eval_strategy="steps",
-    eval_steps=200,
+    #eval_strategy="steps",
+    #eval_steps=2000,
     save_strategy="steps",
     save_steps=2000,
     save_total_limit=3,
@@ -250,7 +250,6 @@ training_args = TrainingArguments(
     learning_rate=lr,
     lr_scheduler_type=lr_scheduler_type,
     optim="adamw_torch",
-    load_best_model_at_end=True,
     metric_for_best_model="average_accuracy",
     greater_is_better=True,
     gradient_checkpointing=True,
@@ -273,6 +272,7 @@ trainer.train()
 
 # 12. 保存最终模型
 print(f"训练完成，正在保存模型到 {save_path}...")
+trainer.save_state()
 trainer.save_model(save_path)
 tokenizer.save_pretrained(save_path)
 print("模型保存完成！")
