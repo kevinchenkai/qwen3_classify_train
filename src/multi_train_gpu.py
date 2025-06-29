@@ -2,50 +2,48 @@
 # -*- encoding: utf-8 -*-
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from transformers import Trainer, TrainingArguments
+from transformers import PreTrainedModel
 import json, random, torch
 from datasets import Dataset
 from transformers import DataCollatorWithPadding
 import numpy as np
 from sklearn.metrics import accuracy_score
+from torch.nn import CrossEntropyLoss
+from transformers import AutoConfig
 
 # 1. 自定义多任务模型
-class MultiTaskQwenModel(torch.nn.Module):
-    def __init__(self, base_model):
-        super().__init__()
-        self.model = base_model
-        config = base_model.config
+class MultiTaskQwenModel(PreTrainedModel):
+    config_class = AutoConfig
+    
+    def __init__(self, config, base_model=None):
+        super().__init__(config)
         
-        # 创建三个独立的分类头，并指定与基础模型相同的数据类型
-        self.clarity_head = torch.nn.Linear(config.hidden_size, 5).to(dtype=base_model.dtype)  # 5个类别
-        self.complexity_head = torch.nn.Linear(config.hidden_size, 5).to(dtype=base_model.dtype)
-        self.quality_head = torch.nn.Linear(config.hidden_size, 5).to(dtype=base_model.dtype)
-        
-        # 添加梯度检查点支持
-        self.gradient_checkpointing = False
+        if base_model is None:
+            self.model = AutoModelForSequenceClassification.from_config(config)
+        else:
+            self.model = base_model
+
+        # 移除基础模型的score层
+        if hasattr(self.model, 'score'):
+            del self.model.score
+            self.model.score = None        
+
+        # 创建三个独立的分类头 - 使用与基模型相同的数据类型
+        dtype = next(self.model.parameters()).dtype
+        self.clarity_head = torch.nn.Linear(config.hidden_size, 5).to(dtype)
+        self.complexity_head = torch.nn.Linear(config.hidden_size, 5).to(dtype)
+        self.quality_head = torch.nn.Linear(config.hidden_size, 5).to(dtype)
         
     def forward(self, input_ids, attention_mask, labels=None, **kwargs):
-        # 添加梯度检查点支持
-        if self.gradient_checkpointing and self.training:
-            outputs = torch.utils.checkpoint.checkpoint(
-                self.model,
-                input_ids,
-                attention_mask,
-                output_hidden_states=True,
-                use_reentrant=False
-            )
-        else:
-            outputs = self.model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                output_hidden_states=True
-            )
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_hidden_states=True
+        )
         
         # 获取[CLS]位置的隐藏状态
         last_hidden_state = outputs.hidden_states[-1]
-        pooled_output = last_hidden_state[:, 0]  # 使用第一个token作为分类表示
-        
-        # 确保分类头使用正确的数据类型
-        pooled_output = pooled_output.to(dtype=self.clarity_head.weight.dtype)
+        pooled_output = last_hidden_state[:, 0]
         
         # 通过三个分类头
         clarity_logits = self.clarity_head(pooled_output)
@@ -54,16 +52,13 @@ class MultiTaskQwenModel(torch.nn.Module):
         
         loss = None
         if labels is not None:
-            # 确保标签使用正确的数据类型（通常是long）
-            labels = labels.to(dtype=torch.long)
-            
             # 拆分三个任务的标签
             clarity_labels = labels[:, 0]
             complexity_labels = labels[:, 1]
             quality_labels = labels[:, 2]
             
             # 计算三个任务的交叉熵损失
-            loss_fct = torch.nn.CrossEntropyLoss()
+            loss_fct = CrossEntropyLoss()
             loss_clarity = loss_fct(clarity_logits, clarity_labels)
             loss_complexity = loss_fct(complexity_logits, complexity_labels)
             loss_quality = loss_fct(quality_logits, quality_labels)
@@ -98,7 +93,7 @@ num_train_epochs = 3
 per_device_train_batch_size = 16
 gradient_accumulation = 2
 per_device_eval_batch_size = 8
-warmup_steps = 25
+warmup_steps = 30
 weight_decay = 0.01
 logging_steps = 1
 lr = 2e-5
@@ -108,14 +103,15 @@ lr_scheduler_type = "cosine"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 base_model = AutoModelForSequenceClassification.from_pretrained(
     model_name,
-    num_labels=19,  # 原始模型标签数量
+    num_labels=1,  # 原始模型标签数量
     attn_implementation="flash_attention_2",
     torch_dtype=torch.bfloat16
 )
 base_model.config.pad_token_id = 151643
 
 # 使用自定义模型
-model = MultiTaskQwenModel(base_model)
+config = base_model.config
+model = MultiTaskQwenModel(config, base_model=base_model)
 
 # 4. 读取JSONL数据
 def read_jsonl(file_path):
@@ -239,8 +235,6 @@ training_args = TrainingArguments(
     weight_decay=weight_decay,
     logging_dir=logging_dir,
     logging_steps=logging_steps,
-    #eval_strategy="steps",
-    #eval_steps=2000,
     save_strategy="steps",
     save_steps=2000,
     save_total_limit=3,
@@ -251,7 +245,6 @@ training_args = TrainingArguments(
     lr_scheduler_type=lr_scheduler_type,
     optim="adamw_torch",
     metric_for_best_model="average_accuracy",
-    greater_is_better=True,
     gradient_checkpointing=True,
     report_to="tensorboard",
 )
@@ -272,7 +265,6 @@ trainer.train()
 
 # 12. 保存最终模型
 print(f"训练完成，正在保存模型到 {save_path}...")
-trainer.save_state()
-trainer.save_model(save_path)
+model.save_pretrained(save_path)  # 使用PreTrainedModel的保存方法
 tokenizer.save_pretrained(save_path)
 print("模型保存完成！")
