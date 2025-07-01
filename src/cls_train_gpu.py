@@ -9,16 +9,17 @@ from transformers import DataCollatorWithPadding
 # 1.训练参数设置
 model_name = "/home/kas/kas_workspace/model/Reward/Qwen3-4B/"  # 模型名或者本地路径
 file_path = "/home/kas/kas_workspace/share/chenkai/playground/dataset/cls_prompt/cls_train.jsonl"  # 定义训练集路径
-save_path = "/home/kas/kas_workspace/share/chenkai/playground/output/cls_prompt/qwen3_cls_3epoch"  # 定义保存路径
+save_path = "/home/kas/kas_workspace/share/chenkai/playground/output/cls_prompt/qwen3_cls_3epoch-0628"  # 定义保存路径
 logging_dir = save_path + "/tensorboard/"  # 日志目录
 
 num_train_epochs=3
-per_device_train_batch_size=8  # 提高批处理大小（根据GPU内存调整）
-per_device_eval_batch_size=4  # 提高评估批处理大小
-warmup_steps=25
+per_device_train_batch_size=16  # 提高批处理大小（根据GPU内存调整）
+gradient_accumulation=2  # 梯度累积步数（根据GPU内存调整）
+per_device_eval_batch_size=8  # 提高评估批处理大小
+warmup_steps=50
 weight_decay=0.01
 logging_steps=1              # 减少日志频率
-lr=1e-5  # 学习率
+lr=2e-5  # 学习率
 lr_scheduler_type="cosine"
 
 # 2.创建标签到索引的映射
@@ -29,6 +30,16 @@ label_to_id = {
     "文本纠错": 13, "文本分类": 14, "意图识别": 15, "文本写作": 16, "创意设计": 17, "其他类别":18
 }
 num_labels = len(label_to_id)
+
+#  加载预训练的 Qwen3 模型和分词器
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForSequenceClassification.from_pretrained(
+    model_name, 
+    num_labels=num_labels,
+    attn_implementation="flash_attention_2",
+    torch_dtype=torch.bfloat16   # 使用bfloat16精度
+)
+model.config.pad_token_id = 151643  # 定义pad token，模型才会忽略后面那些pad而是把真正最后一个token的hidden state用于分类
 
 # 3.读取训练jsonl文件
 def read_jsonl(file_path):
@@ -72,17 +83,6 @@ data_collator = DataCollatorWithPadding(
     padding=True
 )
 
-#  4.加载预训练的 Qwen3 模型和分词器
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForSequenceClassification.from_pretrained(
-    model_name, 
-    num_labels=num_labels,
-    use_flash_attention_2=True,  # 启用Flash Attention 2
-    torch_dtype=torch.bfloat16   # 使用bfloat16精度
-)
-model.config.pad_token_id = 151643  # 定义pad token，模型才会忽略后面那些pad而是把真正最后一个token的hidden state用于分类
-
-
 # 定义训练参数
 training_args = TrainingArguments(
     output_dir=save_path,                           # 输出目录
@@ -100,7 +100,7 @@ training_args = TrainingArguments(
     save_total_limit=3,                         # 最多保存3个检查点，旧的会被删除
     fp16=False,                                 # 禁用FP16（使用BF16）
     bf16=True,                                  # 启用BF16（针对H100优化）
-    gradient_accumulation_steps=2,              # 梯度累积（可选，根据显存调整）
+    gradient_accumulation_steps=gradient_accumulation,   # 梯度累积（可选，根据显存调整）
     learning_rate=lr,                          # 设置学习率（根据模型调整）
     lr_scheduler_type=lr_scheduler_type,       # 使用余弦学习率调度器
     optim="adamw_torch",                        # 使用Torch实现的AdamW
@@ -127,11 +127,3 @@ trainer.save_state()
 trainer.save_model(output_dir=save_path)
 tokenizer.save_pretrained(save_path)
 print(f"模型已保存到 {save_path}")
-
-"""
-# 评估最佳模型并保存评估结果
-eval_results = trainer.evaluate()
-print(f"最终评估结果: {eval_results}")
-with open(f"{save_path}/eval_results.json", "w") as f:
-    json.dump(eval_results, f, indent=4)
-"""
