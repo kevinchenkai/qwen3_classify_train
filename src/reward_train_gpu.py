@@ -21,7 +21,7 @@ gradient_accumulation = 4        # 增加梯度累积
 per_device_eval_batch_size = 4
 warmup_steps = 50
 weight_decay = 0.01
-logging_steps = 10
+logging_steps = 1
 lr = 2e-5  # 更小的学习率
 lr_scheduler_type = "cosine"
 max_length = 2048  # 最大长度
@@ -192,12 +192,7 @@ training_args = TrainingArguments(
     lr_scheduler_type=lr_scheduler_type,
     optim="adamw_torch",
     gradient_checkpointing=True,
-    remove_unused_columns=False,
-    #eval_strategy="steps",
-    #eval_steps=200,
-    #load_best_model_at_end=True,
-    #metric_for_best_model="loss",
-    #greater_is_better=False,
+    remove_unused_columns=False
 )
 
 # 7. 创建Trainer
@@ -206,7 +201,7 @@ trainer = RewardTrainer(
     args=training_args,
     train_dataset=encoded_dataset["train"],
     eval_dataset=encoded_dataset["test"],
-    data_collator=data_collator,
+    data_collator=data_collator
 )
 
 # 8. 训练模型
