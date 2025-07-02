@@ -10,16 +10,16 @@ import numpy as np
 
 # 1. 训练参数设置
 model_name = "/home/kas/kas_workspace/model/Reward/Qwen3-4B/"  # 模型名或本地路径
-#file_path = "/home/kas/kas_workspace/share/chenkai/playground/dataset/rm_infinity/infinity_reward.train.jsonl"  # 训练集路径
-file_path = "/home/kas/kas_workspace/share/chenkai/playground/dataset/rm_infinity/train_sample.jsonl"  # 测试集路径
-save_path = "/home/kas/kas_workspace/share/chenkai/playground/output/cls_prompt/qwen3_rm"  # 保存路径
+file_path = "/home/kas/kas_workspace/share/chenkai/playground/dataset/rm_infinity/infinity_reward.train.jsonl"  # 训练集路径
+#file_path = "/home/kas/kas_workspace/share/chenkai/playground/dataset/rm_infinity/train_sample.jsonl"  # 测试集路径
+save_path = "/home/kas/kas_workspace/share/chenkai/playground/output/cls_prompt/qwen3_rewared_3epoch_0702"  # 保存路径
 logging_dir = save_path + "/tensorboard/"  # 日志目录
 
-num_train_epochs = 1
-per_device_train_batch_size = 16  # 降低批处理大小（RM需要更多显存）
-gradient_accumulation = 4        # 增加梯度累积
+num_train_epochs = 3
+per_device_train_batch_size = 32  # 降低批处理大小（RM需要更多显存）
+gradient_accumulation = 2        # 增加梯度累积
 per_device_eval_batch_size = 4
-warmup_steps = 50
+warmup_steps = 25
 weight_decay = 0.01
 logging_steps = 1
 lr = 2e-5  # 更小的学习率
@@ -192,7 +192,7 @@ training_args = TrainingArguments(
     lr_scheduler_type=lr_scheduler_type,
     optim="adamw_torch",
     gradient_checkpointing=True,
-    remove_unused_columns=False
+    remove_unused_columns=False,
 )
 
 # 7. 创建Trainer
@@ -201,7 +201,7 @@ trainer = RewardTrainer(
     args=training_args,
     train_dataset=encoded_dataset["train"],
     eval_dataset=encoded_dataset["test"],
-    data_collator=data_collator
+    data_collator=data_collator,
 )
 
 # 8. 训练模型
