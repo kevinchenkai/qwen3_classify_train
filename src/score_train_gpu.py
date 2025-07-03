@@ -114,7 +114,7 @@ class MultiTaskQwenModel(Qwen3PreTrainedModel):
 # 2. 训练参数设置
 model_name = "/home/kas/kas_workspace/model/Qwen3/Qwen3-4B"  # 使用较小模型便于演示
 file_path = "/home/kas/kas_workspace/share/chenkai/playground/dataset/score_labels/score_model_train.jsonl"
-save_path = "/home/kas/kas_workspace/share/chenkai/playground/output/score_labels/qwen3_3score_3epoch_0703"
+save_path = "/home/kas/kas_workspace/share/chenkai/playground/output/score_labels/qwen3_3score_3epoch_0703_v2"
 logging_dir = save_path + "/tensorboard/"
 
 # 训练参数
@@ -125,8 +125,10 @@ per_device_eval_batch_size = 8
 warmup_steps = 50
 weight_decay = 0.01
 logging_steps = 1
+max_length = 8196  # Qwen3模型的最大输入长度
 lr = 2e-5
 lr_scheduler_type = "cosine"
+
 
 # 3. 加载模型和分词器
 tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -177,7 +179,7 @@ def preprocess_function(examples):
     tokenized = tokenizer(
         examples['text'],
         truncation=True,
-        max_length=512,
+        max_length=max_length,
         padding=False
     )
     
