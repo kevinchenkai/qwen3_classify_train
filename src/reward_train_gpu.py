@@ -10,7 +10,7 @@ import numpy as np
 
 # 1. 训练参数设置
 model_name = "/home/kas/kas_workspace/model/Reward/Qwen3-4B/"  # 模型名或本地路径
-file_path = "/home/kas/kas_workspace/share/chenkai/playground/dataset/rm_infinity/infinity_reward.train.jsonl"  # 训练集路径
+file_path = "/home/kas/kas_workspace/share/chenkai/playground/dataset/rm_infinity/score_dpo_train.jsonl"  # 测试集路径
 #file_path = "/home/kas/kas_workspace/share/chenkai/playground/dataset/rm_infinity/train_sample.jsonl"  # 测试集路径
 save_path = "/home/kas/kas_workspace/share/chenkai/playground/output/cls_prompt/qwen3_rewared_3epoch_0702"  # 保存路径
 logging_dir = save_path + "/tensorboard/"  # 日志目录
