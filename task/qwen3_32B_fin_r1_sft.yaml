@@ -1,0 +1,38 @@
+### model
+model_name_or_path: /home/kas/kas_workspace/model/Qwen3/Qwen3-14B
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: full
+deepspeed: /home/kas/kas_workspace/share/chenkai/playground/task/deepspeed/ds_z3_config.json  # choices: [ds_z0_config.json, ds_z2_config.json, ds_z3_config.json]
+
+### dataset
+dataset_dir: /home/kas/kas_workspace/dataset/data/
+dataset: fin_r1_sft_0617
+template: qwen3
+cutoff_len: 16384
+overwrite_cache: true
+preprocessing_num_workers: 16
+dataloader_num_workers: 8
+
+### output
+output_dir: /home/kas/kas_workspace/model/train_result/fin-r1/Fin-R1-Qwen3-14B-sft-v2-0617/
+logging_steps: 2
+save_strategy: epoch
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 4
+learning_rate: 1.0e-5
+num_train_epochs: 2.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+flash_attn: fa2
