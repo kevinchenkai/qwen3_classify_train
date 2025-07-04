@@ -82,16 +82,16 @@ if __name__ == "__main__":
 
     #infinity preference dataset
     #DATASET_PATH = "/home/kas/kas_workspace/share/chenkai/playground/dataset/rm_infinity/infinity_reward.test.jsonl"
-    #MODEL_PATH = "/home/kas/kas_workspace/output/Qwen3_reward_model_4B_0625"
+    #MODEL_PATH = "/home/kas/kas_workspace/model/Reward/Qwen3_reward_model_4B_0625"
 
     # GPT-4 preference dataset
     #MODEL_PATH = "/home/kas/kas_workspace/model/Reward/Skywork-Reward-Llama-3.1-8B" # skywork baseline，85%
-    #MODEL_PATH = "/home/kas/kas_workspace/output/Skywork_Reward_Model_8B_dpo_0704" # skywork ft,97%
-    MODEL_PATH = "/home/kas/kas_workspace/output/Qwen3_Reward_Model_4B_dpo_0703/"  # Qwen3-ft, 98%
-    #MODEL_PATH = "/home/kas/kas_workspace/share/chenkai/playground/output/cls_prompt/qwen3_rewared_3epoch_0704"
+    #MODEL_PATH = "/home/kas/kas_workspace/model/Reward/Skywork_Reward_Model_8B_dpo_0704" # skywork ft,97%
+    MODEL_PATH = "/home/kas/kas_workspace/model/Reward/Qwen3_Reward_Model_4B_dpo_0703/"  # Qwen3-ft, 98%
+    #MODEL_PATH = "/home/kas/kas_workspace/model/Reward/qwen3_rewared_3epoch_0704" #transformers, 99%
   
     DATASET_PATH = "/home/kas/kas_workspace/share/chenkai/playground/dataset/rm_infinity/score_dpo_test.jsonl"
-    
+
     DEVICE = "cuda:0"
     
     # 加载模型和数据集
