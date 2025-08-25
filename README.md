@@ -17,3 +17,6 @@
 # llama factory train yaml
     - qwen3_dpo_reward.yaml  (using GPT4.1 dataset)
     - skywork_reward_model.yaml (skywork finetune)
+
+# Multi GPU distributed Train
+    - python -m torch.distributed.launch --nproc_per_node=2 rm_train_gpu.py
